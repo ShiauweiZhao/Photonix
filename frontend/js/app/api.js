@@ -33,7 +33,8 @@ export {
     fetchSearchResults,
     fetchBrowseResults,
     fetchRandomThumbnail,
-    deleteAlbum
+    deleteAlbum,
+    fetchLeafAlbums
 } from '../api/media.js';
 
 /**

@@ -885,10 +885,85 @@ function getAllParentPaths(filePath) {
     return paths;
 }
 
+/**
+ * 获取所有底层相册（不包含子相册的相册）
+ * 用于扁平化视图，方便查看所有包含媒体的相册
+ * @returns {Promise<Array>} 相册列表
+ */
+async function getAllLeafAlbums() {
+    await ensureBrowseIndexes();
+
+    // 查找所有不包含子相册的相册（即底层相册）
+    // 这些相册可能包含图片或视频
+    const sql = `
+        SELECT DISTINCT
+            a1.path,
+            a1.name,
+            a1.mtime
+        FROM items a1
+        WHERE a1.type = 'album'
+            AND NOT EXISTS (
+                SELECT 1 FROM items a2
+                WHERE a2.type = 'album'
+                    AND a2.path LIKE a1.path || '/%'
+            )
+        ORDER BY a1.mtime DESC
+    `;
+
+    const rows = await dbAll('main', sql, []);
+
+    if (!rows || rows.length === 0) {
+        return [];
+    }
+
+    // 获取每个相册的封面信息
+    const albumPaths = rows.map(r => r.path);
+    const { coversMap } = await findCoverPhotosBatchDbWithMeta(albumPaths);
+
+    // 构建返回数据
+    const albums = [];
+    for (const row of rows) {
+        const entryRelativePath = row.path;
+        const fullAbsPath = path.join(PHOTOS_DIR, entryRelativePath);
+        const coverInfo = coversMap.get(fullAbsPath);
+
+        let coverUrl = 'data:image/svg+xml,...';
+        let coverWidth = 1, coverHeight = 1;
+
+        if (coverInfo && coverInfo.path) {
+            const relativeCoverPath = path.relative(PHOTOS_DIR, coverInfo.path);
+            let coverMtime = coverInfo.mtime;
+
+            if (coverMtime == null) {
+                coverMtime = await fs.stat(coverInfo.path).then(s => s.mtimeMs).catch(() => Date.now());
+            }
+
+            coverUrl = `${API_BASE}/api/thumbnail?path=${encodeURIComponent(relativeCoverPath)}&v=${Math.floor(coverMtime)}`;
+            coverWidth = coverInfo.width;
+            coverHeight = coverInfo.height;
+        }
+
+        albums.push({
+            type: 'album',
+            data: {
+                name: row.name || path.basename(entryRelativePath),
+                path: entryRelativePath,
+                coverUrl,
+                mtime: row.mtime || 0,
+                coverWidth,
+                coverHeight
+            }
+        });
+    }
+
+    return albums;
+}
+
 // 导出文件服务函数
 module.exports = {
     findCoverPhotosBatch: findCoverPhotosBatchSafe,
     findCoverPhotosBatchDb,
     getDirectoryContents,
+    getAllLeafAlbums,
     invalidateCoverCache
 };

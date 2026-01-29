@@ -71,6 +71,7 @@ export async function handleHashChange() {
     }
     updatePreSearchHash(cleanHashString);
     manageFromSearchHash(newDecodedPath);
+    manageFromLeafAlbums(newDecodedPath);
     if (navigation.isSearchRoute) {
         await handleSearchRoute(navigation, pageSignal);
     } else {
@@ -229,6 +230,51 @@ function manageFromSearchHash(newDecodedPath) {
                 }
             } else {
                 state.update('fromSearchHash', null);
+            }
+        } catch (e) {
+            // 忽略sessionStorage错误
+        }
+    }
+}
+
+/**
+ * 管理"来自叶子相册视图"的状态，用于面包屑"返回所有相册"功能。
+ * 只在从叶子相册视图进入的第一个相册显示"返回所有相册"，继续导航时清除。
+ * @param {string} newDecodedPath - 新的路径
+ */
+function manageFromLeafAlbums(newDecodedPath) {
+    const isLeafAlbumsView = newDecodedPath === 'leaf-albums';
+    const isHome = newDecodedPath === '';
+
+    // 如果进入叶子相册视图或首页，清除 fromLeafAlbums 标记
+    if (isLeafAlbumsView || isHome) {
+        try {
+            sessionStorage.removeItem('sg_from_leaf_albums');
+            sessionStorage.removeItem('sg_leaf_albums_first');
+            state.update('fromLeafAlbums', false);
+        } catch (e) {
+            // 忽略sessionStorage错误
+        }
+    } else {
+        // 非叶子相册视图/首页，检查是否是从叶子相册视图进入的第一个相册
+        try {
+            const wasFromLeaf = sessionStorage.getItem('sg_from_leaf_albums');
+            const firstAlbum = sessionStorage.getItem('sg_leaf_albums_first');
+
+            if (wasFromLeaf === 'true') {
+                if (!firstAlbum) {
+                    // 第一次从叶子相册视图进入相册：记录这个相册路径
+                    sessionStorage.setItem('sg_leaf_albums_first', newDecodedPath);
+                    state.update('fromLeafAlbums', true);
+                } else if (firstAlbum === newDecodedPath) {
+                    // 仍在第一个相册（可能是回退）：保持返回链接
+                    state.update('fromLeafAlbums', true);
+                } else {
+                    // 已导航到其他相册：清除返回链接
+                    state.update('fromLeafAlbums', false);
+                }
+            } else {
+                state.update('fromLeafAlbums', false);
             }
         } catch (e) {
             // 忽略sessionStorage错误
