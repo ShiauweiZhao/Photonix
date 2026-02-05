@@ -23,6 +23,13 @@ const browseQuerySchema = Joi.object({
 
 const BROWSE_CACHE_TTL = Number(process.env.BROWSE_CACHE_TTL || 180);
 
+// 获取所有底层相册（扁平化视图）- 特殊路由，必须放在通配符路由之前
+router.get(
+  '/leaf-albums',
+  cache(BROWSE_CACHE_TTL),
+  asyncHandler(browseController.getAllLeafAlbums)
+);
+
 // 使用 validatePath 中间件处理来自 req.params 的路径
 router.get(
   '/*',

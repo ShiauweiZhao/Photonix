@@ -6,12 +6,41 @@
 import { state } from '../../core/state.js';
 import { elements } from '../../shared/dom-elements.js';
 import { safeSetInnerHTML } from '../../shared/dom-utils.js';
+
+// 创建 DOM 元素的辅助函数
+function createElement(tag, { classes = [], attributes = {}, textContent = '', children = [] } = {}) {
+    const element = document.createElement(tag);
+
+    if (classes.length > 0) {
+        element.classList.add(...classes);
+    }
+
+    if (Object.keys(attributes).length > 0) {
+        Object.entries(attributes).forEach(([key, value]) => {
+            element.setAttribute(key, value);
+        });
+    }
+
+    if (textContent) {
+        element.textContent = textContent;
+    }
+
+    if (children.length > 0) {
+        children.forEach(child => {
+            if (child instanceof Element) {
+                element.appendChild(child);
+            }
+        });
+    }
+
+    return element;
+}
 import { setManagedTimeout } from '../../core/timer-manager.js';
 import { AbortBus } from '../../core/abort-bus.js';
 import { ROUTER } from '../../core/constants.js';
 import { routerLogger } from '../../core/logger.js';
 import { showNotification } from '../../shared/utils.js';
-import { fetchBrowseResults } from '../api.js';
+import { fetchBrowseResults, fetchLeafAlbums } from '../api.js';
 import {
     renderBreadcrumb,
     renderBrowseGrid,
@@ -44,6 +73,13 @@ export async function handleBrowseRoute(navigation, pageSignal) {
     const enhancedNavigation = { ...navigation, previousPath };
     state.currentSort = navigation.currentSortValue;
     state.currentBrowsePath = navigation.pathOnly;
+
+    // 特殊处理：扁平相册视图
+    if (navigation.pathOnly === 'leaf-albums') {
+        await renderLeafAlbumsView(pageSignal);
+        return;
+    }
+
     renderBreadcrumb(navigation.pathOnly);
 
     if (navigation.pathChanged || navigation.sortChanged) {
@@ -308,5 +344,125 @@ export async function streamPath(path, signal, navigation = null) {
         if (!elements.contentGrid?.classList.contains('error-container')) {
             elements.contentGrid.style.minHeight = '';
         }
+    }
+}
+
+/**
+ * 渲染扁平相册视图（所有底层相册）
+ * @param {AbortSignal} signal 中止信号
+ */
+async function renderLeafAlbumsView(signal) {
+    const prepareControl = await prepareForNewContent();
+    state.isBrowseLoading = true;
+
+    // 设置标记，表示当前在叶子相册视图中
+    try {
+        sessionStorage.setItem('sg_from_leaf_albums', 'true');
+        sessionStorage.removeItem('sg_leaf_albums_first'); // 清除之前的第一个相册记录
+    } catch (e) {
+        // 忽略sessionStorage错误
+    }
+
+    // 渲染特殊面包屑
+    renderBreadcrumbForLeafAlbums();
+
+    try {
+        const data = await fetchLeafAlbums(signal);
+
+        if (!data || signal.aborted || AbortBus.get('page') !== signal) return;
+
+        if (prepareControl?.cancelSkeleton) {
+            prepareControl.cancelSkeleton();
+        }
+
+        const items = data.items || [];
+
+        if (items.length === 0) {
+            showEmptyAlbum();
+            return;
+        }
+
+        // 渲染相册网格
+        const { contentElements } = renderBrowseGrid(items, 0);
+        safeSetInnerHTML(elements.contentGrid, '');
+        elements.contentGrid.append(...contentElements);
+
+        // 设置布局切换
+        import('../../shared/dom-elements.js').then(({ reinitializeElements }) => {
+            reinitializeElements();
+            const sortContainer = document.getElementById('sort-container');
+            if (sortContainer) {
+                renderLayoutToggleOnly(false);
+            }
+            applyLayoutMode();
+            finalizeNewContent('leaf-albums');
+        });
+
+        setManagedTimeout(() => {
+            ensureLayoutToggleVisible();
+            adjustScrollOptimization('leaf-albums');
+        }, 50, 'layout-post-render');
+
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
+        routerLogger.warn('获取底层相册列表失败', { error: error.message });
+        showNetworkError();
+    } finally {
+        state.isBrowseLoading = false;
+        if (!elements.contentGrid?.classList.contains('error-container')) {
+            elements.contentGrid.style.minHeight = '';
+        }
+    }
+}
+
+/**
+ * 渲染扁平相册视图的面包屑
+ */
+function renderBreadcrumbForLeafAlbums() {
+    const breadcrumbNav = elements.breadcrumbNav;
+    if (!breadcrumbNav) return;
+
+    let breadcrumbLinks = breadcrumbNav.querySelector('#breadcrumb-links');
+    let sortContainer = breadcrumbNav.querySelector('#sort-container');
+
+    if (!breadcrumbLinks || !sortContainer) {
+        while (breadcrumbNav.firstChild) {
+            breadcrumbNav.removeChild(breadcrumbNav.firstChild);
+        }
+        breadcrumbLinks = createElement('div', { classes: ['flex-1', 'min-w-0'], attributes: { id: 'breadcrumb-links' } });
+        sortContainer = createElement('div', { classes: ['flex-shrink-0', 'ml-4'], attributes: { id: 'sort-container' } });
+        breadcrumbNav.append(breadcrumbLinks, sortContainer);
+    }
+
+    // 清空面包屑并设置标题
+    while (breadcrumbLinks.firstChild) {
+        breadcrumbLinks.removeChild(breadcrumbLinks.firstChild);
+    }
+
+    // 添加"首页"链接
+    const homeLink = createElement('a', {
+        classes: ['text-gray-500', 'hover:text-black', 'transition-colors'],
+        attributes: { href: '#/', title: '首页' },
+        textContent: '首页'
+    });
+    breadcrumbLinks.appendChild(homeLink);
+
+    // 添加分隔符
+    breadcrumbLinks.appendChild(createElement('span', {
+        classes: ['mx-2', 'text-gray-300'],
+        textContent: '/'
+    }));
+
+    // 添加当前页面标题
+    breadcrumbLinks.appendChild(createElement('span', {
+        classes: ['text-black', 'font-bold'],
+        textContent: '所有相册'
+    }));
+
+    // 清空排序容器（扁平视图不需要排序）
+    while (sortContainer.firstChild) {
+        sortContainer.removeChild(sortContainer.firstChild);
     }
 }

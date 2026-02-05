@@ -240,6 +240,37 @@ export function renderBreadcrumb(path) {
 		homeLink.appendChild(iconImg);
 		homeLink.appendChild(brandText);
 		breadcrumbLinks.appendChild(homeLink);
+
+		// 添加"所有相册"按钮
+		setTimeout(() => {
+			const sortContainer = document.getElementById('sort-container');
+			if (!sortContainer) return;
+
+			// 清空排序容器
+			while (sortContainer.firstChild) {
+				sortContainer.removeChild(sortContainer.firstChild);
+			}
+
+			// 创建"所有相册"按钮
+			const leafAlbumsBtn = createElement('button', {
+				classes: ['px-4', 'py-2', 'rounded-lg', 'text-gray-600', 'hover:text-black', 'hover:bg-gray-100', 'transition-all', 'text-sm', 'font-medium', 'flex', 'items-center', 'gap-2'],
+				attributes: { type: 'button', title: '查看所有底层相册' }
+			});
+			leafAlbumsBtn.innerHTML = `
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+					<path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"/>
+				</svg>
+				<span>所有相册</span>
+			`;
+			leafAlbumsBtn.addEventListener('click', () => {
+				// 设置来源标记，方便后续返回
+				state.update('fromLeafAlbums', true);
+				window.location.hash = '#/leaf-albums';
+			});
+
+			sortContainer.appendChild(leafAlbumsBtn);
+		}, 100);
+
 		return;
 	}
 	const container = createElement('div', { classes: ['flex', 'items-center', 'whitespace-nowrap'] });
@@ -256,7 +287,22 @@ export function renderBreadcrumb(path) {
 		container.appendChild(createElement('span', { classes: ['mx-2', 'text-gray-300'], textContent: '|' }));
 	}
 
-	// 添加“首页”
+	// 添加"首页"
+	container.appendChild(createElement('a', {
+		classes: ['text-gray-500', 'hover:text-black', 'transition-colors'],
+		attributes: { href: `#/${sortParam}` },
+		textContent: '首页'
+	}));
+
+	// 若来自"所有相册"视图，添加返回链接
+	if (state.fromLeafAlbums) {
+		container.appendChild(createElement('span', { classes: ['mx-2', 'text-gray-300'], textContent: '/' }));
+		container.appendChild(createElement('a', {
+			classes: ['text-gray-500', 'hover:text-black', 'transition-colors'],
+			attributes: { href: '#/leaf-albums', title: '返回所有相册' },
+			textContent: '所有相册'
+		}));
+	}
 	container.appendChild(createElement('a', {
 		classes: ['text-gray-500', 'hover:text-black', 'transition-colors'],
 		attributes: { href: `#/${sortParam}` },

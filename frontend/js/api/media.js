@@ -229,3 +229,44 @@ export async function deleteAlbum(path) {
     }
     return result;
 }
+
+/**
+ * 获取所有底层相册（扁平化视图）
+ * 返回所有不包含子相册的相册列表
+ * @param {AbortSignal} signal 中止信号
+ * @returns {Promise<object>} 相册列表对象
+ *   - items {Array} 相册列表
+ *   - total {number} 总数量
+ * @throws {Error} 获取失败时抛出错误
+ */
+export async function fetchLeafAlbums(signal) {
+    try {
+        const url = '/api/browse/leaf-albums';
+        const performRequest = () => requestJSONWithDedup(url, {
+            method: 'GET',
+            headers: getAuthHeaders(),
+            signal
+        });
+
+        try {
+            return await performRequest();
+        } catch (error) {
+            if (error.status === 503 || error.status === 504) {
+                const delays = [5000, 10000];
+                for (const delay of delays) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    if (signal?.aborted) break;
+                    try {
+                        return await performRequest();
+                    } catch (retryError) {
+                        if (!(retryError.status === 503 || retryError.status === 504)) throw retryError;
+                    }
+                }
+            }
+            throw error;
+        }
+    } catch (error) {
+        apiLogger.warn('获取底层相册列表失败', { error: error.message });
+        throw error;
+    }
+}

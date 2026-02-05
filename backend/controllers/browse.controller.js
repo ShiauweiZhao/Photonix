@@ -8,7 +8,7 @@ const logger = require('../config/logger');
 const { LOG_PREFIXES } = logger;
 const { TraceManager } = require('../utils/trace');
 const { PHOTOS_DIR } = require('../config');
-const { getDirectoryContents } = require('../services/file.service');
+const { getDirectoryContents, getAllLeafAlbums } = require('../services/file.service');
 const manualSyncScheduler = require('../services/manualSyncScheduler.service');
 
 /**
@@ -76,6 +76,26 @@ exports.browseDirectory = async (req, res) => {
             return res.status(404).json({ code: 'PATH_NOT_FOUND', message: error.message, requestId: req.requestId });
         }
         // 对于其他未知错误，传递给全局错误处理器
+        throw error;
+    }
+};
+
+/**
+ * 获取所有底层相册（扁平化视图）
+ * 返回所有不包含子相册的相册，方便查看所有写真
+ * @param {Object} req - Express请求对象
+ * @param {Object} res - Express响应对象
+ * @returns {Object} JSON响应，包含所有底层相册列表
+ */
+exports.getAllLeafAlbums = async (req, res) => {
+    try {
+        const albums = await getAllLeafAlbums();
+        res.json({
+            items: albums,
+            total: albums.length
+        });
+    } catch (error) {
+        logger.error('获取底层相册列表失败', { error: error.message });
         throw error;
     }
 };
