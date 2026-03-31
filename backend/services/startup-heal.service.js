@@ -1,4 +1,5 @@
 const { promises: fs } = require('fs');
+const fsSync = require('fs');
 const path = require('path');
 const logger = require('../config/logger');
 const { formatLog, LOG_PREFIXES } = logger;
@@ -303,6 +304,23 @@ async function setupIndexingAndMonitoring() {
             }, { startDelayMs: 8000, retryIntervalMs: 30000, timeoutMs: 20 * 60 * 1000, lockTtlSec: 7200, category: 'index-maintenance' });
         } catch (e) {
             logger.debug(formatLog(LOG_PREFIXES.SERVER, `启动期回填装载失败（忽略）：${e && e.message}`));
+        }
+
+        // 启动压缩包监听服务
+        try {
+            const archiveWatcherService = require('./archiveWatcher.service');
+            const { PHOTOS_DIR, DATA_DIR } = require('../config');
+            const downloadPath = process.env.PHOTONIX_DOWNLOAD_PATH || path.join(DATA_DIR, 'downloads');
+
+            await archiveWatcherService.initialize({
+                enabled: true,
+                watchPaths: [PHOTOS_DIR, downloadPath].filter(p => {
+                    try { return fsSync.existsSync(p); } catch { return false; }
+                }),
+                deleteAfterExtract: true
+            });
+        } catch (e) {
+            logger.debug(formatLog(LOG_PREFIXES.SERVER, `压缩包监听服务启动失败（忽略）：${e && e.message}`));
         }
     } catch (dbError) {
         logger.debug('检查索引状态失败（降噪）：', dbError && dbError.message);

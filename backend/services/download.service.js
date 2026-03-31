@@ -354,10 +354,31 @@ class DownloadManager {
     const downloaded = downloadResult.downloaded || [];
     const attempted = Number(downloadResult.attempted || images.length || 0);
     const failed = Number(downloadResult.failed || 0);
-    const totalBytes = Number(downloadResult.totalBytes || 0);
     const durationMs = Number(downloadResult.durationMs || 0);
 
-    if (downloaded.length === 0) {
+    // 处理压缩包解压的文件：将 extractedFiles 展平到最终列表
+    const finalDownloaded = [];
+    let totalBytes = Number(downloadResult.totalBytes || 0);
+    for (const item of downloaded) {
+      if (item.isArchive && item.extractedFiles && item.extractedFiles.length > 0) {
+        // 压缩包解压成功，使用解压出的文件
+        finalDownloaded.push(...item.extractedFiles);
+
+        // 记录解压日志
+        this.logManager.log('info', `压缩包解压成功，提取 ${item.extractedFiles.length} 个文件`, {
+          taskId,
+          runId,
+          feedTitle,
+          article: articleTitle,
+          archiveFilename: item.filename,
+          extractedCount: item.extractedFiles.length
+        });
+      } else {
+        finalDownloaded.push(item);
+      }
+    }
+
+    if (finalDownloaded.length === 0) {
       this.logManager.log('warning', `文章「${articleTitle}」所有图片下载失败`, {
         taskId,
         runId,
@@ -373,7 +394,7 @@ class DownloadManager {
 
     this.logManager.log(
       'success',
-      `总 ${attempted} 成功下载 ${downloaded.length} 失败 ${failed}（${this.formatBytes(totalBytes)}, ${this.formatDuration(durationMs)}）`,
+      `总 ${attempted} 成功下载 ${finalDownloaded.length} 失败 ${failed}（${this.formatBytes(totalBytes)}, ${this.formatDuration(durationMs)}）`,
       {
         taskId,
         runId,
@@ -381,7 +402,7 @@ class DownloadManager {
         article: articleTitle,
         identifier,
         attempted,
-        downloadedCount: downloaded.length,
+        downloadedCount: finalDownloaded.length,
         failedCount: failed,
         totalBytes,
         durationMs
@@ -404,12 +425,12 @@ class DownloadManager {
       title: articleTitle,
       feed: feedTitle,
       articleUrl: item.link || null,
-      images: downloaded,
+      images: finalDownloaded,
       completedAt: new Date().toISOString(),
-      size: totalBytes || downloaded.reduce((sum, file) => sum + file.size, 0)
+      size: totalBytes || finalDownloaded.reduce((sum, file) => sum + file.size, 0)
     };
 
-    return { images: downloaded, entry };
+    return { images: finalDownloaded, entry };
   }
 
   // ==================== 任务管理 API ====================
