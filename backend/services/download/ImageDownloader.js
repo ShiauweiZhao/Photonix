@@ -13,6 +13,7 @@ const https = require('https');
 const axios = require('axios');
 const imageSize = require('image-size');
 const { v4: uuidv4 } = require('uuid');
+const ArchiveExtractor = require('./ArchiveExtractor');
 
 // HTTP 连接复用 Agent，避免每次请求重建 TCP 连接
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 10, timeout: 60000 });
@@ -24,6 +25,7 @@ class ImageDownloader {
     this.logger = logger;
     this.validationWorker = null;
     this.validationTasks = new Map();
+    this.archiveExtractor = new ArchiveExtractor(config, logger);
     this.initWorker();
   }
 
@@ -147,6 +149,37 @@ class ImageDownloader {
           await fsp.unlink(tempPath).catch(() => { });
           tempPath = null;
           throw new Error('文件体积过小');
+        }
+
+        // 检测是否为压缩包
+        if (this.archiveExtractor.isArchive(tempPath)) {
+          // 重命名到最终路径后再解压
+          await fsp.rename(tempPath, filePath);
+          tempPath = null;
+
+          const extractResult = await this.archiveExtractor.extractArchive(filePath, directory);
+
+          if (extractResult.success && extractResult.files.length > 0) {
+            // 返回解压出的文件列表
+            return {
+              filename,
+              path: path.relative(this.config.baseFolder || directory, filePath),
+              size: stats.size,
+              url,
+              isArchive: true,
+              extractedFiles: extractResult.files.map(f => ({
+                filename: f.filename,
+                path: path.relative(this.config.baseFolder || directory, f.path),
+                size: f.size,
+                mimeType: f.mimeType
+              })),
+              extractedCount: extractResult.files.length
+            };
+          } else {
+            // 解压失败，删除压缩包
+            await fsp.unlink(filePath).catch(() => { });
+            throw new Error(extractResult.error || '压缩包解压失败');
+          }
         }
 
         // 图片验证（如果启用）

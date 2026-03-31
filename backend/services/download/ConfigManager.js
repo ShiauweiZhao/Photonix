@@ -96,6 +96,27 @@ class ConfigManager {
       imageHeaders: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
         Accept: 'image/webp,image/apng,image/*,*/*;q=0.8'
+      },
+      // 压缩包解压配置
+      archiveExtraction: {
+        enabled: true,
+        supportedFormats: ['zip'],
+        deleteAfterExtract: true,
+        maxExtractSize: 500 * 1024 * 1024, // 500MB
+        maxFileCount: 500,
+        maxExtractTime: 60, // 秒
+        allowedMediaTypes: [
+          'image/jpeg',
+          'image/png',
+          'image/gif',
+          'image/webp',
+          'image/bmp',
+          'image/tiff',
+          'video/mp4',
+          'video/webm',
+          'video/quicktime',
+          'video/x-msvideo'
+        ]
       }
     };
   }
@@ -209,6 +230,42 @@ class ConfigManager {
     }
     if (raw.image_headers || raw.imageHeaders) {
       config.imageHeaders = { ...defaults.imageHeaders, ...(raw.image_headers || raw.imageHeaders) };
+    }
+
+    // 压缩包解压配置
+    const archiveExtraction = raw.archive_extraction || raw.archiveExtraction;
+    if (archiveExtraction) {
+      config.archiveExtraction = {
+        enabled: this.normalizeBoolean(
+          archiveExtraction.enabled,
+          defaults.archiveExtraction.enabled
+        ),
+        supportedFormats: this.normalizeStringArray(
+          archiveExtraction.supported_formats || archiveExtraction.supportedFormats
+        ).filter(f => ['zip', 'rar', '7z'].includes(f)) || defaults.archiveExtraction.supportedFormats,
+        deleteAfterExtract: this.normalizeBoolean(
+          archiveExtraction.delete_after_extract ?? archiveExtraction.deleteAfterExtract,
+          defaults.archiveExtraction.deleteAfterExtract
+        ),
+        maxExtractSize: this.normalizeNumber(
+          archiveExtraction.max_extract_size ?? archiveExtraction.maxExtractSize,
+          defaults.archiveExtraction.maxExtractSize,
+          { min: 1024 * 1024 } // 最小 1MB
+        ),
+        maxFileCount: this.normalizeNumber(
+          archiveExtraction.max_file_count ?? archiveExtraction.maxFileCount,
+          defaults.archiveExtraction.maxFileCount,
+          { min: 10, max: 10000, integer: true }
+        ),
+        maxExtractTime: this.normalizeNumber(
+          archiveExtraction.max_extract_time ?? archiveExtraction.maxExtractTime,
+          defaults.archiveExtraction.maxExtractTime,
+          { min: 10, max: 600, integer: true }
+        ),
+        allowedMediaTypes: this.normalizeStringArray(
+          archiveExtraction.allowed_media_types ?? archiveExtraction.allowedMediaTypes
+        ) || defaults.archiveExtraction.allowedMediaTypes
+      };
     }
 
     return config;
