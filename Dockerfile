@@ -57,6 +57,7 @@ COPY backend/ ./backend/
 COPY --from=frontend-builder /app/frontend/index.html ./backend/public/
 COPY --from=frontend-builder /app/frontend/manifest.json ./backend/public/
 COPY --from=frontend-builder /app/frontend/sw.js ./backend/public/
+COPY --from=frontend-builder /app/frontend/sw-cache-manager.js ./backend/public/
 
 COPY --from=frontend-builder /app/frontend/js/dist/ ./backend/public/js/dist/
 COPY --from=frontend-builder /app/frontend/assets/ ./backend/public/assets/

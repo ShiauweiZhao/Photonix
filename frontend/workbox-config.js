@@ -6,6 +6,7 @@ module.exports = {
   globPatterns: [
     'index.html',
     'manifest.json',
+    'sw-cache-manager.js',
     'assets/**/*',
     'js/dist/**/*.js'
   ],

@@ -1,0 +1,36 @@
+name: Regression tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - name: Run backend regression tests
+        working-directory: backend
+        run: npm test
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci --registry=https://registry.npmjs.org --replace-registry-host=always --no-audit --no-fund
+      - name: Run service worker cache tests
+        working-directory: frontend
+        run: npm test
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build

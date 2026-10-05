@@ -17,6 +17,7 @@ try {
 const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
+const { writeThumbnailAtomically } = require('../services/thumbnail/output');
 const { errorMessageTranslator } = require('../utils/errorMessageTranslator');
 
 // 像素限制配置（防止OOM），默认值：2.68亿像素（约16384x16384）
@@ -170,8 +171,8 @@ module.exports = async function runThumbnailTask(payload = {}) {
             const thumbPath = path.join(thumbsDir, thumbRelPath);
 
             try {
-                await fs.access(thumbPath);
-                return { success: true, skipped: true, task };
+                const existing = await fs.stat(thumbPath);
+                if (existing.size > 0) return { success: true, skipped: true, task };
             } catch (accessErr) {
                 if (accessErr && accessErr.code !== 'ENOENT') {
                     logger.debug(`${LOG_PREFIXES.THUMBNAIL_WORKER} 检查缩略图是否存在失败: ${accessErr.message}`);
@@ -180,9 +181,9 @@ module.exports = async function runThumbnailTask(payload = {}) {
 
             await fs.mkdir(path.dirname(thumbPath), { recursive: true });
 
-            const result = isVideo
-                ? await generateVideoThumbnail(filePath, thumbPath)
-                : await generateImageThumbnail(filePath, thumbPath);
+            const result = await writeThumbnailAtomically(thumbPath, temporary => isVideo
+                ? generateVideoThumbnail(filePath, temporary)
+                : generateImageThumbnail(filePath, temporary));
 
             if (result && result.success === false) {
                 const message = result.message || result.error || 'Thumbnail processing failed';

@@ -4,6 +4,7 @@
     "description": "Backend server for the Photonix",
     "main": "server.js",
     "scripts": {
+        "test": "node --test test/*.test.js",
         "start": "node server.js",
         "start:pm2": "pm2 start ecosystem.config.js",
         "stop:pm2": "pm2 stop ecosystem.config.js",

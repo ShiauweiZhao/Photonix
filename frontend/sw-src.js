@@ -1,12 +1,14 @@
 // frontend/sw-src.js (Workbox injectManifest 的源文件)
 
+// Use one injection point for both precaching and the build-specific cache namespace.
+const PRECACHE_ENTRIES = self.__WB_MANIFEST || [];
 // 加载 Workbox 运行时（CDN）并启用预缓存注入点
 try {
   importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js');
   if (self.workbox && self.workbox.precaching) {
     // 构建时注入的预缓存清单
     // eslint-disable-next-line no-undef
-    self.workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
+    self.workbox.precaching.precacheAndRoute(PRECACHE_ENTRIES);
   }
 } catch (e) {
   // 如果 CDN 不可达，SW 仍可通过下面的运行时缓存工作
@@ -28,7 +30,7 @@ function hashString(str) {
   return (h >>> 0).toString(16);
 }
 
-const __WB_ENTRIES = (self && Array.isArray(self["__WB_MANIFEST"])) ? self["__WB_MANIFEST"] : [];
+const __WB_ENTRIES = PRECACHE_ENTRIES;
 let __BUILD_REV = 'dev';
 try {
   __BUILD_REV = hashString(JSON.stringify(__WB_ENTRIES));
@@ -54,7 +56,7 @@ try {
 const STATIC_CACHE_VERSION = `static-${__BUILD_REV}`;
 const API_CACHE_VERSION = `api-${__BUILD_REV}`;
 const MEDIA_CACHE_VERSION = `media-${__BUILD_REV}`;
-const THUMBNAIL_CACHE_VERSION = `thumb-${__BUILD_REV}`;
+const THUMBNAIL_CACHE_VERSION = `thumbnail-${__BUILD_REV}`;
 
 // 缓存管理器已统一处理LRU限制和清理
 
@@ -65,6 +67,10 @@ const THUMBNAIL_CACHE_VERSION = `thumb-${__BUILD_REV}`;
 // 统一的缓存清理函数
 async function cleanupCache(cacheType) {
   try {
+    if (self.swCacheManager && typeof self.swCacheManager.manualCleanup === 'function') {
+      await self.swCacheManager.manualCleanup(cacheType);
+      return;
+    }
     if (self.swCacheManager && typeof self.swCacheManager.performLRUCleanup === 'function') {
       const cacheName = self.swCacheManager.getCacheNameForType ? self.swCacheManager.getCacheNameForType(cacheType) : `${cacheType}-${__BUILD_REV}`;
       const config = self.swCacheManager.getCacheConfig ? self.swCacheManager.getCacheConfig(cacheType) : {
@@ -76,6 +82,18 @@ async function cleanupCache(cacheType) {
   } catch (error) {
     console.warn(`[SW] 缓存清理失败 ${cacheType}:`, error);
   }
+}
+
+function matchRuntimeCache(type, cache, request, options = {}) {
+  return self.swCacheManager?.matchWithLRU
+    ? self.swCacheManager.matchWithLRU(type, request, options)
+    : cache.match(request);
+}
+
+function putRuntimeCache(type, cache, request, response) {
+  return self.swCacheManager?.putWithLRU
+    ? self.swCacheManager.putWithLRU(type, request, response)
+    : cache.put(request, response);
 }
 
 // 仅缓存稳定核心；JS 使用 dist 入口，其他 chunk 运行时按策略缓存
@@ -197,7 +215,7 @@ async function networkFirstApi(request, cacheContext, options = {}) {
 
   const { cacheName, ttlMs } = cacheContext;
   const cache = await caches.open(cacheName);
-  let cachedResponse = await cache.match(request);
+  let cachedResponse = await matchRuntimeCache('api', cache, request, { cacheName });
 
   if (cachedResponse && isCacheExpired(cachedResponse)) {
     await cache.delete(request);
@@ -271,7 +289,8 @@ self.addEventListener('activate', event => {
           if (
             cacheName === STATIC_CACHE_VERSION ||
             cacheName === API_CACHE_VERSION ||
-            cacheName === MEDIA_CACHE_VERSION
+            cacheName === MEDIA_CACHE_VERSION ||
+            cacheName === THUMBNAIL_CACHE_VERSION
           ) {
             return Promise.resolve();
           }
@@ -280,7 +299,9 @@ self.addEventListener('activate', event => {
           const isOurCache =
             cacheName.startsWith('static-') ||
             cacheName.startsWith('api-') ||
-            cacheName.startsWith('media-');
+            cacheName.startsWith('media-') ||
+            cacheName.startsWith('thumbnail-') ||
+            cacheName.startsWith('thumb-');
 
           // 显式清理旧的 API 专用缓存（如 api-search-v1）与非当前版本的 api-* 缓存
           const isLegacyApiSearch = cacheName === 'api-search-v1';
@@ -394,16 +415,15 @@ self.addEventListener('fetch', event => {
   if (url.pathname.startsWith('/api/thumbnail')) {
     event.respondWith(
       caches.open(THUMBNAIL_CACHE_VERSION).then(cache => {
-        return cache.match(request).then(cachedResponse => {
+        return matchRuntimeCache('thumbnail', cache, request).then(cachedResponse => {
           // 后台更新策略
           const fetchPromise = fetch(new Request(request, { cache: 'no-store' }))
             .then(networkResponse => {
               if (networkResponse.status === 200 && isCacheableResponse(networkResponse, request)) {
                 const responseForCache = networkResponse.clone();
-                cache.put(request, responseForCache).catch(err => {
+                putRuntimeCache('thumbnail', cache, request, responseForCache).catch(err => {
                   console.warn('缩略图缓存失败:', err);
                 });
-                cleanupCache('thumbnail');
               }
               return networkResponse;
             })
@@ -452,7 +472,7 @@ self.addEventListener('fetch', event => {
     // 激进缓存策略：缓存优先 + 后台更新
     event.respondWith(
       caches.open(MEDIA_CACHE_VERSION).then(cache => {
-        return cache.match(request).then(cachedResponse => {
+        return matchRuntimeCache('media', cache, request).then(cachedResponse => {
           // 后台更新策略
           const fetchPromise = fetch(new Request(request, { cache: 'no-store' }))
             .then(networkResponse => {
@@ -467,10 +487,9 @@ self.addEventListener('fetch', event => {
 
                 if (shouldCache) {
                   const copy = networkResponse.clone();
-                  cache.put(request, copy).catch(err => {
+                  putRuntimeCache('media', cache, request, copy).catch(err => {
                     console.warn('媒体缓存失败:', err);
                   });
-                  cleanupCache('media');
                 }
               }
               return networkResponse;

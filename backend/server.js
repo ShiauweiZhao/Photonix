@@ -23,6 +23,7 @@ const { PORT, PHOTOS_DIR, DATA_DIR } = require('./config');
 const { closeAllConnections } = require('./db/multi-db');
 const { getCount } = require('./repositories/stats.repo');
 const { stopDbMaintenance } = require('./services/orchestrator');
+const { stopThumbnailService } = require('./services/thumbnail.service');
 const {
     initializeDirectories,
     handleDatabaseMigration,
@@ -109,6 +110,7 @@ process.on('SIGINT', async () => {
     try {
         // 先停止定时任务，避免关闭过程中触发新任务
         stopDbMaintenance();
+        await stopThumbnailService();
         await closeAllConnections();
         logger.info('所有数据库连接已关闭');
         process.exit(0);
@@ -123,6 +125,7 @@ process.on('SIGTERM', async () => {
     try {
         // 先停止定时任务，避免关闭过程中触发新任务
         stopDbMaintenance();
+        await stopThumbnailService();
         await closeAllConnections();
         logger.info('所有数据库连接已关闭');
         process.exit(0);
